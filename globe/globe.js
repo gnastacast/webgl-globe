@@ -21,20 +21,21 @@ DAT.Globe = function(container, opts) {
     c.setHSL( ( 0.6 - ( x * 0.5 ) ), 1.0, 0.5 );
     return c;
   };
-  var imgDir = opts.imgDir || '/globe/';
+  // var imgDir = opts.imgDir || '/globe/';
+  var imgDir = '/static/webgl-globe/globe/';
 
   var Shaders = {
     'earth' : {
       uniforms: {
-        'texture': { type: 't', value: null }
+        'texture': { type: 't', value: 0, texture: null }
       },
       vertexShader: [
         'varying vec3 vNormal;',
         'varying vec2 vUv;',
         'void main() {',
+          'vUv = uv;',
           'gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );',
           'vNormal = normalize( normalMatrix * normal );',
-          'vUv = uv;',
         '}'
       ].join('\n'),
       fragmentShader: [
@@ -46,6 +47,24 @@ DAT.Globe = function(container, opts) {
           'float intensity = 1.05 - dot( vNormal, vec3( 0.0, 0.0, 1.0 ) );',
           'vec3 atmosphere = vec3( 1.0, 1.0, 1.0 ) * pow( intensity, 3.0 );',
           'gl_FragColor = vec4( diffuse + atmosphere, 1.0 );',
+          //'gl_FragColor = vec4(vUv,0.,1.);',
+        '}'
+      ].join('\n')
+    },
+    'atmosphere' : {
+      uniforms: {},
+      vertexShader: [
+        'varying vec3 vNormal;',
+        'void main() {',
+          'vNormal = normalize( normalMatrix * normal );',
+          'gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'varying vec3 vNormal;',
+        'void main() {',
+          'float intensity = pow( 0.8 - dot( vNormal, vec3( 0, 0, 1.0 ) ), 12.0 );',
+          'gl_FragColor = vec4( 1.0, 1.0, 1.0, 1.0 ) * intensity;',
         '}'
       ].join('\n')
     },
@@ -71,6 +90,8 @@ DAT.Globe = function(container, opts) {
   var camera, scene, renderer, w, h;
   var mesh, atmosphere, point;
 
+  var clock = new THREE.Clock();
+
   var overRenderer;
 
   var curZoomSpeed = 0;
@@ -84,11 +105,9 @@ DAT.Globe = function(container, opts) {
   var distance = 100000, distanceTarget = 100000;
   var padding = 40;
   var PI_HALF = Math.PI / 2;
+  var is_moving = true;
 
   function init() {
-
-    container.style.color = '#fff';
-    container.style.font = '13px/20px Arial, sans-serif';
 
     var shader, uniforms, material;
     w = container.offsetWidth || window.innerWidth;
@@ -142,6 +161,7 @@ DAT.Globe = function(container, opts) {
     point = new THREE.Mesh(geometry);
 
     renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setClearColor (0xffffff, 1);
     renderer.setSize(w, h);
 
     renderer.domElement.style.position = 'absolute';
@@ -163,6 +183,8 @@ DAT.Globe = function(container, opts) {
     container.addEventListener('mouseout', function() {
       overRenderer = false;
     }, false);
+
+    clock.start()
   }
 
   function addData(data, opts) {
@@ -187,7 +209,7 @@ DAT.Globe = function(container, opts) {
         for (i = 0; i < data.length; i += step) {
           lat = data[i];
           lng = data[i + 1];
-//        size = data[i + 2];
+          // size = data[i + 2];
           color = colorFnWrapper(data,i);
           size = 0;
           addPoint(lat, lng, size, color, this._baseGeometry);
@@ -341,7 +363,7 @@ DAT.Globe = function(container, opts) {
 
   function zoom(delta) {
     distanceTarget -= delta;
-    distanceTarget = distanceTarget > 1000 ? 1000 : distanceTarget;
+    distanceTarget = distanceTarget > 1500 ? 1500 : distanceTarget;
     distanceTarget = distanceTarget < 350 ? 350 : distanceTarget;
   }
 
@@ -353,7 +375,7 @@ DAT.Globe = function(container, opts) {
   function render() {
     zoom(curZoomSpeed);
 
-    rotation.x += (target.x - rotation.x) * 0.1;
+    rotation.x += (target.x - rotation.x) * 0.1 + clock.getElapsedTime() * 0.01;
     rotation.y += (target.y - rotation.y) * 0.1;
     distance += (distanceTarget - distance) * 0.3;
 
@@ -362,7 +384,9 @@ DAT.Globe = function(container, opts) {
     camera.position.z = distance * Math.cos(rotation.x) * Math.cos(rotation.y);
 
     camera.lookAt(mesh.position);
-
+    camera.aspect = container.offsetWidth / container.offsetHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize( container.offsetWidth, container.offsetHeight );
     renderer.render(scene, camera);
   }
 
